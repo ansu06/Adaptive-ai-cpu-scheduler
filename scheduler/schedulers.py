@@ -141,45 +141,118 @@ def srtf(processes):
 
 
 def round_robin(processes, quantum=50):
-    """Round Robin: each process gets a fixed time slice, then goes to the back of the queue if unfinished."""
-    procs = sorted([dict(p, remaining=p["burst"]) for p in processes], key=lambda p: p["arrival"])
+    """Round Robin with correct handling of CPU idle periods."""
+
+    procs = sorted(
+        [dict(p, remaining=p["burst"]) for p in processes],
+        key=lambda p: p["arrival"]
+    )
+
     queue = deque()
     time = 0
     order = []
     trace = []
     completion = {}
+    first_start = {}
+
     i = 0
+
     if procs:
-        time = procs[0]["arrival"]  # jump clock to when the first process actually arrives
-    while i < len(procs) and procs[i]["arrival"] <= time:
-        queue.append(procs[i]); i += 1
-    while queue:
+        time = procs[0]["arrival"]
+
+    while i < len(procs) or queue:
+
+        # If no process is ready, jump to the next arrival
+        if not queue:
+            if i < len(procs):
+                time = max(time, procs[i]["arrival"])
+
+                while (
+                    i < len(procs)
+                    and procs[i]["arrival"] <= time
+                ):
+                    queue.append(procs[i])
+                    i += 1
+            else:
+                break
+
         p = queue.popleft()
-        run = min(quantum, p["remaining"])
+
+        # Record first response/start time
+        if p["pid"] not in first_start:
+            first_start[p["pid"]] = time
+
+        run = min(
+            quantum,
+            p["remaining"]
+        )
+
         seg_start = time
+
         time += run
+
         p["remaining"] -= run
+
         order.append(p["pid"])
-        trace.append({"pid": p["pid"], "start": seg_start, "end": time})
-        while i < len(procs) and procs[i]["arrival"] <= time:
-            queue.append(procs[i]); i += 1
+
+        trace.append({
+            "pid": p["pid"],
+            "start": seg_start,
+            "end": time
+        })
+
+        # Add newly arrived processes
+        while (
+            i < len(procs)
+            and procs[i]["arrival"] <= time
+        ):
+            queue.append(procs[i])
+            i += 1
+
+        # Put unfinished process back into queue
         if p["remaining"] > 0:
             queue.append(p)
         else:
             completion[p["pid"]] = time
-    return order, completion, trace
+
+    return order, completion, trace, first_start
 
 
 def round_robin_metrics(processes, quantum=50):
-    """Wraps round_robin() so it returns the same (order, results, trace) shape as the other schedulers."""
-    order, completion, trace = round_robin(processes, quantum)
+    """Round Robin metrics with correct response time."""
+
+    order, completion, trace, first_start = round_robin(
+        processes,
+        quantum
+    )
+
     results = []
+
     for p in processes:
+
         comp = completion[p["pid"]]
-        turnaround = comp - p["arrival"]
-        waiting = turnaround - p["burst"]
-        results.append({"pid": p["pid"], "completion": comp,
-                         "turnaround": turnaround, "waiting": waiting, "response": waiting})
+
+        turnaround = (
+            comp - p["arrival"]
+        )
+
+        waiting = (
+            turnaround - p["burst"]
+        )
+
+        response = (
+            first_start[p["pid"]]
+            - p["arrival"]
+        )
+
+        results.append({
+            "pid": p["pid"],
+            "completion": comp,
+            "turnaround": turnaround,
+            "waiting": waiting,
+            "response": response
+        })
+
     return order, results, trace
 
 
