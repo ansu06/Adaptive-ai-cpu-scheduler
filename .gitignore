@@ -1,14 +1,30 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
 
+# Virtual Environments
 .venv/
 venv/
 env/
+ENV/
 
+# Development / Editor settings
 .vscode/
 .idea/
 
+# OS generated files
 .DS_Store
 Thumbs.db
 
+# Logs and test caches
 *.log
+.pytest_cache/
+
+# Local backups and temporary scratch files
+*.bak*
+app_before_*.py
+
+# Streamlit local state / secrets
+.streamlit/secrets.toml
+.env

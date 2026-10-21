@@ -16,27 +16,27 @@ def make_decision(df):
     drift_result = detect_drift(df)
 
     drift_status = drift_result["status"]
-    drift_score = drift_result["drift_score"]
-    trust_ai = drift_result["trust_ai"]
+    drift_score = float(drift_result["drift_score"])
+    trust_ai = bool(drift_result["trust_ai"])
 
-    # Highest prediction confidence
-    ai_confidence = max(confidence.values())
+    # Confidence in the predicted scheduler
+    ai_confidence = float(confidence.get(prediction, max(confidence.values()) if confidence else 0.0))
 
     # Decision logic
     if not trust_ai:
         decision = "FALLBACK"
         selected_scheduler = None
-        reason = "Workload drift detected. AI recommendation is not trusted."
+        reason = "Workload drift detected beyond safety threshold (1.5). AI recommendation is not trusted; falling back to empirical performance evaluation."
 
     elif ai_confidence < 0.50:
         decision = "RE-EVALUATE"
         selected_scheduler = None
-        reason = "Workload is stable, but AI confidence is low."
+        reason = f"Workload distribution is stable, but AI prediction confidence ({ai_confidence * 100:.1f}%) is below decision threshold (50%). Running multi-scheduler evaluation."
 
     else:
         decision = "TRUST AI"
         selected_scheduler = prediction
-        reason = "Workload is stable and AI confidence is sufficient."
+        reason = f"Workload distribution is within normal operating parameters and AI confidence ({ai_confidence * 100:.1f}%) meets threshold."
 
     return {
         "ai_prediction": prediction,
@@ -53,33 +53,23 @@ def make_decision(df):
 
 
 if __name__ == "__main__":
-
     print("\n" + "=" * 60)
     print("ADAPTIVE AI SCHEDULER - DECISION ENGINE")
     print("=" * 60)
 
     df = pd.read_csv("process_data.csv")
-
-    # Test with first 10 processes
     workload = df.head(10)
-
     result = make_decision(workload)
 
     print(f"\nAI Recommendation : {result['ai_prediction']}")
     print(f"AI Confidence     : {result['ai_confidence'] * 100:.2f}%")
     print(f"Drift Status      : {result['drift_status']}")
     print(f"Drift Score       : {result['drift_score']:.4f}")
-
     print("\n" + "-" * 60)
-
     print(f"Decision           : {result['decision']}")
-
     if result["selected_scheduler"]:
         print(f"Selected Scheduler : {result['selected_scheduler']}")
-
     print(f"Reason             : {result['reason']}")
-
     print("\nScheduler Confidence:")
-
     for scheduler, probability in result["confidence"].items():
         print(f"{scheduler}: {probability * 100:.2f}%")

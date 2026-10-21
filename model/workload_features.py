@@ -1,37 +1,13 @@
 import pandas as pd
+from model.predict import extract_features as extract_workload_features, FEATURES
 
-
-def extract_workload_features(df):
-    """
-    Extract workload-level features from process data.
-    """
-
-    features = {
-        "num_processes": len(df),
-
-        "avg_burst": df["Burst time"].mean(),
-        "std_burst": df["Burst time"].std(),
-
-        "avg_arrival": df["Arrival Time"].mean(),
-        "std_arrival": df["Arrival Time"].std(),
-
-        "avg_resources": df["Resources"].mean(),
-
-        "preemptive_ratio": df["Prremptive"].mean()
-    }
-
-    return features
-
+__all__ = ["extract_workload_features", "FEATURES"]
 
 if __name__ == "__main__":
-
     df = pd.read_csv("process_data.csv")
-
-    # Take first 10 processes as one sample workload
     workload = df.head(10)
-
     features = extract_workload_features(workload)
 
-    print("Workload Features:")
+    print("Workload Features (11 Features):")
     for key, value in features.items():
         print(f"{key}: {value:.4f}")
