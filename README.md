@@ -1,654 +1,274 @@
+# AI-Based Adaptive CPU Scheduler
 
-# 🧠 Adaptive AI CPU Scheduler
-------------------------------------------------------------------------
+> **Workload-Aware CPU Scheduling Prototype with Machine Learning, Distribution Drift Detection, and Adaptive Performance Fallback**  
+> **Authors:** Sayan Giri & Ansuman Singh &bull; **Academic Year:** 2026 &bull; **Institution:** Vellore Institute of Technology (VIT)
 
-## 📌 Overview
+---
 
-Traditional CPU schedulers such as **FCFS, SJF, SRTF, and Round Robin**
-follow fixed scheduling policies. However, process workloads can change
-significantly over time.
+## 1. Project Overview & Architecture
 
-This project adds an **adaptive AI decision layer** on top of
-traditional CPU scheduling.
+Modern operating system workloads vary drastically in character—from bursty, interactive background services to long batch-processing jobs. Traditional CPU scheduling algorithms (FCFS, SJF, SRTF, Round Robin) make fixed scheduling assumptions that may result in suboptimal waiting and turnaround times when workload patterns shift.
 
-The system:
+This project implements an **Adaptive AI-Based CPU Scheduling System**:
+1. **Workload Profiler**: Extracts 11 continuous statistical features characterizing job burst times, arrival rates, arrival gaps, and arrival-burst correlation.
+2. **Workload Drift Detector**: Evaluates standardized z-score distances against the baseline training distribution to detect out-of-distribution or anomalous workload conditions ($Z$-score metric, threshold = $1.50$).
+3. **Machine Learning Classifier (SVM)**: Predicts the optimal scheduling policy with calibrated class probabilities using a scikit-learn pipeline (`StandardScaler` + `SVC(probability=True)`).
+4. **Adaptive Decision Engine**: Employs a three-tier decision hierarchy:
+   - **TRUST AI**: Workload is stable ($\text{Drift Score} < 1.5$) and prediction confidence $\ge 50\%$.
+   - **PERFORMANCE RE-EVALUATION**: Workload is stable, but prediction confidence $< 50\%$.
+   - **DRIFT FALLBACK**: Workload distribution drift is detected ($\text{Drift Score} \ge 1.5$), triggering simulated comparative evaluation to select the best scheduling policy.
+5. **Discrete-Event Simulation Engine**: High-fidelity simulators for FCFS, SJF, SRTF (event-driven preemption), and Round Robin ($q=4$) with accurate tracking of arrival, response, waiting, and turnaround times.
+6. **Pure Black Workstation Console**: A Streamlit dashboard engineered with a professional graphite workstation layout, live host telemetry via `psutil`, and interactive timeline visualizations.
 
-1.  📊 Analyzes the current process workload
-2.  🧮 Extracts workload-level statistical features
-3.  🤖 Uses a Random Forest model to predict a suitable scheduler
-4.  🎯 Estimates prediction confidence
-5.  🔍 Detects workload drift
-6.  🛡️ Trusts the AI only when the workload is sufficiently familiar
-7.  🔄 Falls back to traditional scheduler evaluation when necessary
+### System Architecture Flowchart
 
-> **Core idea:** Don't blindly trust ML. Use ML when it is reliable, and
-> use traditional scheduling when it is not.
-
-------------------------------------------------------------------------
-
-## ✨ Key Features
-
-  -----------------------------------------------------------------------
-  Feature                             Description
-  ----------------------------------- -----------------------------------
-  🤖 **AI Scheduler Prediction**      Random Forest-based scheduler
-                                      classification
-
-  🎯 **Confidence-Aware Decisions**   AI recommendations are evaluated
-                                      using prediction confidence
-
-  🔍 **Workload Drift Detection**     Detects when the current workload
-                                      differs from the training
-                                      distribution
-
-  🛡️ **Safe Fallback**                Uses traditional scheduling when AI
-                                      should not be trusted
-
-  ⚡ **Multiple Schedulers**          FCFS, SJF, SRTF and Round Robin
-
-  📈 **Performance Comparison**       Waiting, turnaround and response
-                                      time comparison
-
-  🖥️ **Live Monitoring**              CPU, memory and process information
-                                      through `psutil`
-
-  📊 **Interactive Dashboard**        Streamlit-based visualization and
-                                      decision monitoring
-
-  🧪 **Drift Demonstration**          Dedicated workload mode for testing
-                                      the fallback mechanism
-  -----------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
-## 🏗️ Architecture
-
-``` text
-                    ┌─────────────────────┐
-                    │   Process Workload  │
-                    └──────────┬──────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │ Feature Extraction  │
-                    └──────────┬──────────┘
-                               │
-                ┌──────────────┴──────────────┐
-                ▼                             ▼
-       ┌─────────────────┐           ┌──────────────────┐
-       │ Random Forest   │           │ Drift Detection  │
-       │ Prediction      │           │                  │
-       └────────┬────────┘           └────────┬─────────┘
-                │                             │
-                └──────────────┬──────────────┘
-                               ▼
-                    ┌─────────────────────┐
-                    │ Adaptive Decision   │
-                    │       Engine        │
-                    └──────────┬──────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-   │  TRUST AI   │      │ RE-EVALUATE │      │   FALLBACK  │
-   │             │      │             │      │             │
-   │ AI Scheduler│      │ Traditional │      │ Traditional │
-   │             │      │ Evaluation  │      │ Evaluation  │
-   └─────────────┘      └──────┬──────┘      └──────┬──────┘
-                               │                      │
-                               └──────────┬───────────┘
-                                          ▼
-                              ┌─────────────────────┐
-                              │ Selected Scheduler  │
-                              └─────────────────────┘
+```mermaid
+flowchart TD
+    A["Incoming Workload (Job ID, Arrival Time, Burst Time)"] --> B["Feature Extraction (11 Workload Features)"]
+    B --> C["Workload Drift Detector (Z-Score Distance)"]
+    B --> D["Calibrated SVM Classifier (StandardScaler + SVC)"]
+    C --> E["Adaptive Decision Engine"]
+    D --> E
+    E -->|"Drift Score >= 1.50"| F["DRIFT FALLBACK: Empirical Multi-Scheduler Benchmark"]
+    E -->|"Confidence < 50%"| G["PERFORMANCE RE-EVALUATION: Multi-Scheduler Benchmark"]
+    E -->|"Stable & Confidence >= 50%"| H["TRUST AI: Execute Predicted Scheduler"]
+    F --> I["Selected Scheduler Execution (FCFS, SJF, SRTF, Round Robin)"]
+    G --> I
+    H --> I
+    I --> J["Gantt Chart Timeline, Waiting & Turnaround Analytics"]
 ```
 
-------------------------------------------------------------------------
-
-## 🧠 Adaptive Decision Logic
-
-The system follows three possible paths.
-
-### 🟢 1. TRUST AI
-
-When:
-
--   The workload is stable
--   Maximum model confidence is **≥ 50%**
-
-The predicted scheduler is selected.
-
-``` text
-Stable Workload
-      +
-Confidence ≥ 50%
-      ↓
-  TRUST AI
-      ↓
-AI Scheduler
+```
++-------------------------------------------------------------+
+|                     Incoming Workload                       |
+|       (Job IDs, Arrival Times, Burst Durations)             |
++-------------------------------------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|             Feature Extraction (11 Features)                |
+|  num_processes, avg/std burst, burst_range, avg/std arrival,|
+|      avg/std arrival gaps, arrival_burst_correlation        |
++-------------------------------------------------------------+
+            /                                     \
+           v                                       v
++------------------------+             +----------------------+
+|  Workload Drift Engine |             |    SVM Classifier    |
+| (Z-Score Mahalanobis)  |             | (Calibrated Probas)  |
++------------------------+             +----------------------+
+           \                                       /
+            v                                     v
++-------------------------------------------------------------+
+|                  Adaptive Decision Engine                   |
+|   - Drift Detected?        -> Trigger DRIFT FALLBACK        |
+|   - Low Confidence (<0.5)? -> Trigger RE-EVALUATE           |
+|   - High Confidence?       -> TRUST AI                      |
++-------------------------------------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|                  Selected Scheduler Execution               |
+|            [ FCFS  |  SJF  |  SRTF  |  Round Robin ]        |
+|            Execution Timeline (Gantt) & Analytics           |
++-------------------------------------------------------------+
 ```
 
-### 🟡 2. RE-EVALUATE
+---
 
-When:
+## 2. Model Comparison Benchmark & Methodology
 
--   The workload is stable
--   Maximum model confidence is **\< 50%**
+In accordance with model selection criteria, five distinct machine learning algorithms were trained and benchmarked on `model/training_data_diverse.csv` (400 samples) using identical stratified 80/20 train/test splits (`random_state=42`) and 5-fold stratified cross-validation on the training set.
 
-The system evaluates the traditional schedulers and selects the one with
-the lowest average waiting time.
+### Feature Pipeline & Data Leakage Prevention
+- **Features Used (11)**: `num_processes`, `avg_burst`, `std_burst`, `min_burst`, `max_burst`, `burst_range`, `avg_arrival`, `std_arrival`, `avg_arrival_gap`, `std_arrival_gap`, `arrival_burst_corr`.
+- **Target Label**: `best_scheduler` (`SRTF`, `FCFS`, `SJF`).
+- **Data Leakage Safeguard**: Preprocessing scalers (`StandardScaler`) were embedded into scikit-learn `Pipeline` objects and fit strictly on training folds. Scheduler performance outcome columns (`fcfs_waiting`, `srtf_score`, etc.) were completely excluded from model inputs.
 
-``` text
-Stable Workload
-      +
-Confidence < 50%
-      ↓
- RE-EVALUATE
-      ↓
-FCFS / SJF / SRTF / RR
-      ↓
-Lowest Average Waiting Time
+### Empirical Results Table
+
+| Model | Test Accuracy | Test Macro F1 | Balanced Accuracy | 5-Fold CV Macro F1 Mean | 5-Fold CV Macro F1 Std |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Decision Tree** | 85.00% | 0.7177 | 0.7177 | 0.6795 | &plusmn; 0.0385 |
+| **Random Forest** | 80.00% | 0.6889 | 0.6962 | 0.7044 | &plusmn; 0.0543 |
+| **K-Nearest Neighbors (KNN)** | 87.50% | 0.6962 | 0.6922 | 0.6686 | &plusmn; 0.0462 |
+| **Support Vector Machine (SVM)\*** | 65.00% | 0.6825 | **0.8132** | **0.7069** | **&plusmn; 0.0371** |
+| **Gradient Boosting** | 87.50% | 0.7355 | 0.7285 | 0.6648 | &plusmn; 0.0310 |
+
+\* *Selected Model: Saved to `model/best_model.pkl`.*
+
+### Model Selection Rationale
+- **Primary Selection Criterion**: **5-Fold Cross-Validation Macro F1** on the training folds. SVM achieved the highest score (**0.7069 &plusmn; 0.0371**), followed by Random Forest (0.7044).
+- **Holdout Analysis**: While Gradient Boosting obtained a higher test Macro F1 (0.7355) and KNN achieved higher raw test accuracy (87.50%) on this specific random split, their cross-validation Macro F1 scores (0.6648 and 0.6686) indicated higher fold-to-fold variance and poorer generalization across all splits.
+- **Balanced Accuracy**: SVM achieved the highest Balanced Accuracy on the holdout test set (**81.32%**), reflecting its ability to balance class boundary margins under heavy class imbalance.
+
+### SVM Test Set Confusion Matrix
+
+```
+                 Predicted
+              FCFS   SJF   SRTF
+Actual FCFS    10     0      0
+Actual SJF      0     7      1
+Actual SRTF     0    27     35
 ```
 
-### 🔴 3. DRIFT FALLBACK
+### Dataset Characteristics & Label Distribution
+1. **Class Distribution**: In `training_data_diverse.csv` (400 samples):
+   - **SRTF**: 308 (77.0%)
+   - **FCFS**: 50 (12.5%)
+   - **SJF**: 42 (10.5%)
+2. **Theoretical Justification**: In operating systems scheduling theory, Preemptive Shortest Remaining Time First (SRTF) mathematically minimizes average waiting time across the vast majority of CPU workloads where preemption overhead is negligible. The model frequently recommending SRTF reflects this ground-truth reality.
+3. **SJF vs. SRTF Boundary Overlap**: In samples where arrival times cluster closely, non-preemptive SJF and preemptive SRTF produce identical or near-identical waiting times.
 
-When workload drift is detected, the AI recommendation is not trusted.
+---
 
-``` text
-Drift Detected
-      ↓
-   FALLBACK
-      ↓
-Evaluate Traditional Schedulers
-      ↓
-Lowest Average Waiting Time
+## 3. Scheduler Algorithm Correctness & Verification
+
+The core algorithms in `scheduler/schedulers.py` were rigorously audited, corrected, and verified:
+1. **Event-Driven Preemption in SRTF**: Replaced fixed 1.0-unit clock stepping with dynamic event advancement (`step = min(remaining, next_arrival - time)`). This ensures exact mathematical preemption when processes arrive at fractional timestamps (e.g. 1.5 ms) and calculates response times with zero delay.
+2. **CPU Idle Period Fast-Forwarding**: In FCFS, SJF, and SRTF, idle intervals fast-forward directly to the next arrival rather than iterating pointlessly through idle clock ticks.
+3. **Zero-Burst Handling**: Processes with `burst == 0` complete immediately at arrival time with 0 waiting and 0 response time without inducing infinite loops.
+4. **Unique Tracking for Duplicate Process IDs**: Schedulers index jobs by unique sequence identifiers (`_idx`) rather than raw PID strings, preventing state corruption when duplicate PIDs are submitted.
+5. **Response Time Calculation**: In all algorithms (especially Round Robin and SRTF), **response time** is computed strictly as $\text{first\_start\_time} - \text{arrival\_time}$.
+6. **Consistent Round Robin Quantum**: Standardized default `quantum=4` across the backend, simulation models, and dashboard.
+
+---
+
+## 4. Setup & Installation Instructions
+
+### Prerequisites
+- Python 3.10 to 3.13
+- Windows, macOS, or Linux
+
+### Step 1: Virtual Environment Setup
+Open PowerShell or your terminal in the repository:
+
+```powershell
+# Navigate to the project directory
+cd "c:\Users\user\Downloads\AI adaptive CPU Scheduler"
+
+# Activate existing virtual environment
+.\.venv\Scripts\Activate.ps1
 ```
 
-------------------------------------------------------------------------
+*(If activating on macOS/Linux: `source .venv/bin/activate`)*
 
-## ⚙️ Scheduling Algorithms
-
-The project evaluates four traditional CPU scheduling algorithms.
-
-  -----------------------------------------------------------------------
-  Algorithm               Type                    Main Idea
-  ----------------------- ----------------------- -----------------------
-  **FCFS**                Non-preemptive          Execute processes in
-                                                  arrival order
-
-  **SJF**                 Non-preemptive          Select the shortest
-                                                  available job
-
-  **SRTF**                Preemptive              Select the process with
-                                                  the shortest remaining
-                                                  time
-
-  **Round Robin**         Preemptive              Execute processes using
-                                                  a fixed time quantum
-  -----------------------------------------------------------------------
-
-### 📊 Evaluation Metrics
-
-The schedulers are compared using:
-
--   **Average Waiting Time**
--   **Average Turnaround Time**
--   **Average Response Time**
-
-------------------------------------------------------------------------
-
-## 🤖 Machine Learning
-
-The AI component uses a **Random Forest classifier** to predict the
-scheduler associated with a workload pattern.
-
-### 📐 Workload Features
-
-The model uses **11 workload-level features**:
-
-  -----------------------------------------------------------------------
-  Feature                             Description
-  ----------------------------------- -----------------------------------
-  `num_processes`                     Number of processes
-
-  `avg_burst`                         Average burst time
-
-  `std_burst`                         Standard deviation of burst time
-
-  `min_burst`                         Minimum burst time
-
-  `max_burst`                         Maximum burst time
-
-  `burst_range`                       Maximum burst time − minimum burst
-                                      time
-
-  `avg_arrival`                       Average arrival time
-
-  `std_arrival`                       Standard deviation of arrival time
-
-  `avg_arrival_gap`                   Average gap between consecutive
-                                      arrivals
-
-  `std_arrival_gap`                   Standard deviation of arrival gaps
-
-  `arrival_burst_corr`                Correlation between arrival time
-                                      and burst time
-  -----------------------------------------------------------------------
-
-### 🗂️ Model Files
-
-``` text
-model/
-├── random_forest_scheduler.pkl
-├── training_data_diverse.csv
-└── training_data_random.csv
-```
-
-The trained model is already included in the repository, so **retraining
-is not required** to run the dashboard.
-
-------------------------------------------------------------------------
-
-## 🔍 Workload Drift Detection
-
-The system compares the current workload against the training workload
-distribution.
-
-For each feature:
-
-``` text
-distance = |current_value − training_mean| / training_std
-```
-
-The overall drift score is:
-
-``` text
-D = mean(|xᵢ − μᵢ| / σᵢ)
-```
-
-### Current Threshold
-
-``` text
-D < 1.5  →  🟢 WORKLOAD STABLE
-D ≥ 1.5  →  🔴 DRIFT DETECTED
-```
-
-When drift is detected:
-
-``` text
-AI Recommendation
-       ↓
-   Not Trusted
-       ↓
-Traditional Scheduler Evaluation
-       ↓
-Final Scheduler
-```
-
-> **Note:** The current drift detector is a lightweight
-> standardized-distance heuristic rather than a formal statistical
-> concept-drift test.
-
-------------------------------------------------------------------------
-
-## 📊 Dashboard
-
-The Streamlit dashboard provides a visual view of the entire decision
-process.
-
-### Dashboard includes
-
--   🖥️ CPU utilization
--   💾 Memory utilization
--   🔢 Process count
--   📋 Input workload
--   🤖 AI scheduler recommendation
--   🎯 AI confidence
--   🔍 Drift score
--   🟢/🔴 Workload stability
--   🧠 Adaptive decision
--   🎯 Selected scheduler
--   📊 Scheduler performance comparison
--   📈 Execution timeline
--   📉 AI probability distribution
-
-### Demonstration Modes
-
-#### 🟢 Normal Workload
-
-Runs the adaptive scheduler on a normal workload and demonstrates the AI
-decision pipeline.
-
-#### 🔴 Drift Test
-
-Creates an intentionally different workload distribution to demonstrate:
-
-``` text
-DRIFT DETECTED
-      ↓
-FALLBACK
-      ↓
-TRADITIONAL SCHEDULER
-```
-
-------------------------------------------------------------------------
-
-## 🧪 Example
-
-A typical drift-fallback scenario can look like:
-
-``` text
-AI Recommendation : FCFS
-AI Confidence     : 63.93%
-Drift Score       : 6.3636
-Drift Status      : DRIFT DETECTED
-
-Decision           : FALLBACK
-Selection Method   : DRIFT FALLBACK
-
-Reason:
-Workload drift detected.
-AI recommendation is not trusted.
-```
-
-The important point is that **high AI confidence alone does not override
-workload drift**.
-
-------------------------------------------------------------------------
-
-## 🧩 Project Structure
-
-``` text
-Adaptive-ai-cpu-scheduler/
-│
-├── 📄 app.py
-├── 📄 process_data.csv
-├── 📄 requirements.txt
-├── 📄 .gitignore
-├── 📄 README.md
-│
-├── 📁 scheduler/
-│   └── schedulers.py
-│
-├── 📁 monitoring/
-│   └── system_monitor.py
-│
-├── 📁 drift/
-│   ├── __init__.py
-│   ├── test_drift.py
-│   └── workload_detector.py
-│
-└── 📁 model/
-    ├── adaptive_scheduler.py
-    ├── analyze_diverse_data.py
-    ├── analyze_training_data.py
-    ├── decision_engine.py
-    ├── evaluate_schedulers.py
-    ├── generate_diverse_workloads.py
-    ├── generate_training_data.py
-    ├── predict.py
-    ├── random_forest_scheduler.pkl
-    ├── test_adaptive_drift.py
-    ├── train_model.py
-    ├── training_data_diverse.csv
-    ├── training_data_random.csv
-    └── workload_features.py
-```
-
-------------------------------------------------------------------------
-
-## 🛠️ Tech Stack
-
-  Technology            Purpose
-  --------------------- --------------------------------
-  🐍 **Python**         Core implementation
-  🌲 **Scikit-learn**   Random Forest machine learning
-  🐼 **Pandas**         Data processing
-  🔢 **NumPy**          Numerical computation
-  💾 **Joblib**         Model serialization
-  🖥️ **psutil**         Live OS monitoring
-  📊 **Matplotlib**     Visualization
-  🎈 **Streamlit**      Interactive dashboard
-:::
-
-------------------------------------------------------------------------
-
-## 🚀 Installation
-
-### 1. Clone the repository
-
-``` bash
-git clone https://github.com/ansu06/Adaptive-ai-cpu-scheduler.git
-cd Adaptive-ai-cpu-scheduler
-```
-
-### 2. Create a virtual environment
-
-**Windows --- PowerShell**
-
-``` powershell
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-**Linux / macOS**
-
-``` bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-``` bash
+### Step 2: Install Dependencies
+```powershell
 pip install -r requirements.txt
 ```
 
-------------------------------------------------------------------------
+---
 
-## ▶️ Usage
+## 5. Execution Commands for Evaluation & Demonstration
 
-Start the Streamlit dashboard:
+### Command 1: Run the Unified Automated Test Suite (26 Tests)
+Executes all 26 tests across all 6 test modules (scheduling algorithms, deterministic ground-truth verification, decision engine paths, drift detection, prediction pipeline, and Streamlit state toggling):
 
-``` bash
-python -m streamlit run app.py
+```powershell
+cd Adaptive-ai-cpu-scheduler
+python -m unittest discover -s tests -v
+```
+*Expected Output: `Ran 26 tests in ~34s: OK`*
+
+### Command 2: Run Deterministic Scheduler Metric Tests
+```powershell
+python -m unittest tests/test_deterministic.py -v
 ```
 
-Then open the local Streamlit URL displayed in the terminal.
-
-### Optional: Retrain the model
-
-If you modify the training data or model pipeline:
-
-``` bash
-python model/train_model.py
+### Command 3: Test Decision Engine Logic & Threshold Boundary
+```powershell
+python -m unittest tests/test_decision_engine.py -v
 ```
 
-------------------------------------------------------------------------
-
-## 🧠 Core Modules
-
-### `model/predict.py`
-
-Handles:
-
--   Workload feature extraction
--   Random Forest prediction
--   Class probabilities
--   AI confidence
-
-### `drift/workload_detector.py`
-
-Handles:
-
--   Training workload statistics
--   Current workload feature extraction
--   Drift score calculation
--   Workload stability detection
-
-### `model/decision_engine.py`
-
-Combines:
-
-``` text
-AI Prediction
-      +
-AI Confidence
-      +
-Drift Status
-      ↓
-Adaptive Decision
+### Command 4: Test Bidirectional Dashboard State & Workload Toggling
+```powershell
+python -m unittest tests/test_app_test.py -v
 ```
 
-Possible decisions:
+### Command 5: Launch the Streamlit Dashboard
+```powershell
+streamlit run app.py
+```
+*Access the console in your browser at: `http://localhost:8501`*
 
-``` text
-TRUST AI
-RE-EVALUATE
-FALLBACK
+---
+
+## 6. Demonstration Walkthrough Guide for Faculty Review
+
+1. **Dashboard Overview**:
+   - Point out the pure black/charcoal engineering workstation visual identity.
+   - Show the top host system telemetry (`psutil` CPU %, Memory %, active process count) and explain that this measures genuine host telemetry, distinguishing it from the simulated workload engine.
+2. **Normal Workload Demonstration**:
+   - Note the green `● NORMAL PROFILE` badge on the Process Workload container.
+   - Adjust the **Processes** slider (e.g., from 5 to 8).
+   - In **AI Decision & Explainability**, demonstrate:
+     - Recommended Scheduler: `SRTF`
+     - Confidence: `~80.8%`
+     - Drift Status: `No Drift` | `Score: 1.263 (Lim: 1.50)`
+     - Decision: `TRUST AI`
+     - Probability bar chart showing calibrated multi-class distribution.
+   - In **Scheduler Comparison**, show that SRTF achieves the lowest average waiting time, verifying that the AI recommendation aligns with ground truth.
+   - In **Execution Timeline**, inspect the Gantt chart illustrating the execution schedule.
+3. **Drift Detection & Adaptive Fallback Demonstration**:
+   - Click the **Drift Test** radio button.
+   - Notice that within the exact same frame:
+     - Profile badge switches to red `▲ DRIFT TEST ACTIVE`.
+     - Drift Status switches to red `Drift` with `Score: 5.298 (Lim: 1.50)`.
+     - Decision engine automatically activates `FALLBACK` with rationale: *"Workload drift detected beyond safety threshold (1.5). AI recommendation is not trusted; falling back to empirical performance evaluation."*
+     - Selection method displays `DRIFT FALLBACK`, selecting `FCFS`.
+   - Click back to **Normal Workload** to demonstrate seamless bidirectional state restoration without lag or stale badges.
+4. **Specialized Views**:
+   - Click **Workload Analysis** in the sidebar to inspect statistical features and drift evaluation against baseline training distributions.
+   - Click **Scheduler Comparison** to show side-by-side comparative bar charts across all policies.
+   - Click **Execution Timeline** to inspect individual algorithm Gantt charts.
+   - Click **System Monitor** to show detailed host hardware metrics.
+
+---
+
+## 7. Project File Structure
+
+```
+Adaptive-ai-cpu-scheduler/
+├── app.py                          # Streamlit engineering workstation dashboard
+├── process_data.csv                # Benchmark process dataset (500 jobs)
+├── requirements.txt                # Project dependencies
+├── drift/
+│   ├── workload_detector.py        # Z-score drift detector against training distributions
+│   └── test_drift.py               # Standalone drift verification script
+├── model/
+│   ├── best_model.pkl              # Trained SVM pipeline (StandardScaler + SVC)
+│   ├── random_forest_scheduler.pkl  # Preserved baseline Random Forest artifact
+│   ├── model_comparison_results.csv# 5-model benchmark comparison metrics
+│   ├── compare_models.py           # Benchmark script for the 5 ML models
+│   ├── predict.py                  # Feature extraction and model inference logic
+│   ├── decision_engine.py          # Three-tier decision engine (Trust AI, Re-evaluate, Fallback)
+│   ├── adaptive_scheduler.py       # Orchestration engine combining prediction & simulation
+│   ├── workload_features.py        # 11-feature extraction utility
+│   ├── training_data_diverse.csv   # 400-sample diverse workload training dataset
+│   └── test_adaptive_drift.py      # Automated integration test for drift fallback
+├── monitoring/
+│   └── system_monitor.py           # Host system metrics capture via psutil
+├── scheduler/
+│   └── schedulers.py               # Schedulers (FCFS, SJF, SRTF, Round Robin)
+└── tests/
+    ├── test_schedulers.py          # Core 9-test scheduling unit test suite
+    ├── test_deterministic.py       # 8 ground-truth deterministic scheduling tests
+    ├── test_decision_engine.py     # 4 decision engine path & threshold boundary tests
+    ├── test_diverse_predictions.py # 2 ML pipeline validity & inference tests
+    ├── test_toggle.py              # 2 normal vs drift workload drift tests
+    └── test_app_test.py            # Automated Streamlit bidirectional state test
 ```
 
-### `model/adaptive_scheduler.py`
+---
 
-Executes the final scheduling decision and, when necessary, evaluates:
+## 8. Simulation Scope & Engineering Disclaimer
 
-``` text
-FCFS
-SJF
-SRTF
-Round Robin
-```
+> [!NOTE]
+> This system is designed as an analytical simulator and workload-aware scheduling decision engine. It operates on discrete-event simulation algorithms to model CPU scheduling dynamics and evaluate machine learning adaptation under distribution shift. It does not replace or modify the native Windows NT / Linux kernel dispatcher.
 
-------------------------------------------------------------------------
+---
 
-## 🔬 Project Motivation
+## 9. Team Contributions
 
-The project is based on the observation that **process workloads are
-dynamic**, while traditional scheduling policies do not learn from
-historical workload patterns.
-
-The broader project direction combines:
-
-``` text
-Historical Workload
-        +
-Machine Learning
-        +
-Live OS Monitoring
-        +
-Workload Drift Detection
-        ↓
-Adaptive CPU Scheduling
-```
-
-This follows the project's research direction of making ML-assisted
-scheduling **workload-aware and confidence-aware**, while retaining
-traditional scheduling as a fallback. fileciteturn0file0L79-L89
-
-------------------------------------------------------------------------
-
-## 💡 What Makes It Different?
-
-### 1. 🎯 Confidence-Aware Scheduling
-
-The system does not blindly trust an ML prediction.
-
-``` text
-ML Prediction
-     ↓
-Confidence Check
-   ↙       ↘
-High       Low
- ↓          ↓
-AI       Traditional
-         Scheduling
-```
-
-This confidence-aware decision flow is part of the project's proposed
-novelty. fileciteturn0file2L104-L135
-
-### 2. 🪶 Lightweight ML
-
-Instead of requiring complex reinforcement-learning architectures, the
-project uses a lightweight Random Forest approach intended to be easier
-to train, interpret and apply to tabular workload data.
-fileciteturn0file2L124-L135
-
-### 3. 🔄 Traditional Scheduler Fallback
-
-When AI confidence or workload similarity is insufficient, the system
-can return to traditional scheduling instead of forcing an ML decision.
-
-### 4. 📊 AI vs Traditional Comparison
-
-The project evaluates scheduling approaches using:
-
--   Waiting Time
--   Turnaround Time
--   Response Time
--   CPU Utilization
-
-These metrics are part of the project's stated evaluation objectives.
-fileciteturn0file2L53-L70
-
-------------------------------------------------------------------------
-
-## ⚠️ Limitations
-
--   The machine-learning training data is synthetic.
--   The current training distribution is not perfectly balanced across
-    scheduler classes.
--   Classification performance can vary depending on workload
-    distribution.
--   The drift detector uses a lightweight standardized-distance
-    heuristic.
--   The Drift Test mode is designed for demonstration rather than
-    production workload generation.
--   The system provides scheduling recommendations; it does not replace
-    the operating system's kernel scheduler.
-
-------------------------------------------------------------------------
-
-## 🔮 Future Improvements
-
--   [ ] Larger and more balanced training datasets
--   [ ] Real-world CPU workload traces
--   [ ] Improved SJF classification
--   [ ] More robust statistical drift detection
--   [ ] Online / incremental model learning
--   [ ] Additional CPU scheduling algorithms
--   [ ] Reinforcement-learning-based scheduling
--   [ ] Automated model retraining after confirmed drift
--   [ ] More detailed CPU utilization analytics
--   [ ] Direct integration with OS-level scheduling mechanisms
-
-------------------------------------------------------------------------
-
-## 👨‍💻 Team
-
-### Ansuman Singh & Sayan Giri
-
-**Adaptive AI-Based Intelligent CPU Scheduler**
-
-Operating Systems + Machine Learning
-:::
-
-------------------------------------------------------------------------
-
-## 📚 Academic Context
-
-This project explores the intersection of **Operating Systems and
-Machine Learning**, focusing on workload-aware scheduling, ML-assisted
-recommendations, confidence estimation and fallback mechanisms.
-
-The project presentation describes the overall pipeline as historical
-data → preprocessing → Random Forest → live OS processes → workload
-prediction → confidence estimation → scheduling recommendation →
-dashboard. fileciteturn0file2L73-L102
-
-------------------------------------------------------------------------
-
-### ⭐ If you found this project interesting, consider giving the repository a star!
-
-**Built with Python • Machine Learning • Operating Systems • Streamlit**
-:::
+- **Ansuman Singh**: Machine learning pipeline architecture, workload dataset generation (`training_data_diverse.csv`), model comparison framework (`compare_models.py`), SVM probability calibration, workload distribution drift detection logic, and decision engine integration.
+- **Sayan Giri**: Discrete-event CPU scheduling algorithms (`fcfs`, `sjf`, `srtf`, `round_robin_metrics`), event-driven preemption handling, simulation trace and Gantt timeline generation, performance metric aggregation (`summarize`), and host hardware telemetry integration (`psutil`).
