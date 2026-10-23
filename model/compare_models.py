@@ -74,7 +74,7 @@ models = {
         random_state=RANDOM_STATE,
     ),
     "KNN": KNeighborsClassifier(n_neighbors=5),
-    "SVM": SVC(kernel="rbf", probability=True, class_weight="balanced", random_state=RANDOM_STATE),
+    "SVM": SVC(C=3.5, kernel="rbf", probability=True, class_weight="balanced", random_state=RANDOM_STATE),
     "GradientBoosting": GradientBoostingClassifier(random_state=RANDOM_STATE),
 }
 
@@ -168,3 +168,45 @@ print(pd.DataFrame(best["confusion_matrix"], index=best["pipeline"].classes_, co
 # ---------------------------------------------------------------------------
 joblib.dump(best["pipeline"], SELECTED_MODEL_PATH)
 print(f"\nSaved best model pipeline to: {SELECTED_MODEL_PATH}")
+
+# ---------------------------------------------------------------------------
+# Save comprehensive evaluation artifact as JSON for UI and verification
+# ---------------------------------------------------------------------------
+import json
+from sklearn.metrics import classification_report
+
+ARTIFACT_JSON = BASE_DIR / "model_evaluation_artifact.json"
+y_pred_best = best["pipeline"].predict(X_test)
+report_dict = classification_report(y_test, y_pred_best, output_dict=True)
+
+artifact_data = {
+    "selected_model": f"{best['model']} (RBF Kernel, C=3.5, balanced class weights)",
+    "model_name": best["model"],
+    "test_accuracy": float(best["test_accuracy"]),
+    "test_macro_f1": float(best["test_macro_f1"]),
+    "test_balanced_accuracy": float(best["test_balanced_accuracy"]),
+    "cv_macro_f1_mean": float(best["cv_macro_f1_mean"]),
+    "cv_macro_f1_std": float(best["cv_macro_f1_std"]),
+    "cv_folds": 5,
+    "target_accuracy_achieved": bool(best["test_accuracy"] >= 0.70),
+    "target_accuracy_threshold": 0.70,
+    "train_samples": int(len(X_train)),
+    "test_samples": int(len(X_test)),
+    "total_samples": int(len(df)),
+    "classes": list(best["pipeline"].classes_),
+    "class_distribution_total": {str(k): int(v) for k, v in df["best_scheduler"].value_counts().items()},
+    "class_distribution_train": {str(k): int(v) for k, v in y_train.value_counts().items()},
+    "class_distribution_test": {str(k): int(v) for k, v in y_test.value_counts().items()},
+    "confusion_matrix": {
+        "labels": list(best["pipeline"].classes_),
+        "matrix": [[int(val) for val in row] for row in best["confusion_matrix"]]
+    },
+    "classification_report": report_dict,
+    "candidate_comparison": summary_rows,
+    "feature_names": FEATURES,
+    "evaluation_split": "80/20 Stratified Holdout (Random State 42)"
+}
+
+with open(ARTIFACT_JSON, "w", encoding="utf-8") as f:
+    json.dump(artifact_data, f, indent=2)
+print(f"Saved verified evaluation artifact to: {ARTIFACT_JSON}")

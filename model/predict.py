@@ -65,15 +65,22 @@ def predict_scheduler(df):
     features = extract_features(df)
     X = pd.DataFrame([features])[FEATURES]
 
-    if hasattr(model, "predict_proba"):
+    # Predict optimal scheduler from the trained model's decision boundaries
+    prediction = str(model.predict(X)[0])
+    classes = list(getattr(model, "classes_", ["FCFS", "SJF", "SRTF"]))
+
+    if hasattr(model, "decision_function"):
+        # For margin-based classifiers (e.g. SVC with balanced class weights),
+        # decision_function reflects the balanced decision boundaries.
+        # Softmax provides monotonic, normalized confidence scores aligned with predict().
+        scores = np.asarray(model.decision_function(X)[0], dtype=float)
+        exp_scores = np.exp(scores - np.max(scores))
+        probabilities = exp_scores / np.sum(exp_scores)
+        confidence = {str(c): float(p) for c, p in zip(classes, probabilities)}
+    elif hasattr(model, "predict_proba"):
         probabilities = model.predict_proba(X)[0]
-        classes = list(model.classes_)
-        pred_idx = int(np.argmax(probabilities))
-        prediction = str(classes[pred_idx])
         confidence = {str(c): float(p) for c, p in zip(classes, probabilities)}
     else:
-        prediction = str(model.predict(X)[0])
-        classes = list(getattr(model, "classes_", ["FCFS", "SJF", "SRTF"]))
         confidence = {str(c): (1.0 if c == prediction else 0.0) for c in classes}
 
     return prediction, confidence, features
