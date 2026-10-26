@@ -578,9 +578,11 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
             ctrl_c1, ctrl_c2 = st.columns([1, 1], gap="medium")
             with ctrl_c1:
                 st.markdown('<div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;">Workload Profile</div>', unsafe_allow_html=True)
+                wl_index = 0 if st.session_state.get("workload_mode", "Normal Workload") == "Normal Workload" else 1
                 workload_mode = st.radio(
                     "Workload Profile",
                     ["Normal Workload", "Drift Test"],
+                    index=wl_index,
                     horizontal=True,
                     label_visibility="collapsed",
                     key="wl_radio"
@@ -710,14 +712,51 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
             
             ai_sub1, ai_sub2 = st.columns([1, 1.25], gap="medium")
             
+            is_fallback = (decision == "FALLBACK")
+            is_trust_ai = (decision == "TRUST AI")
+            
+            if is_trust_ai:
+                sel_title = "Selected Scheduler (Active)"
+                sel_badge_txt = "AI Recommendation"
+                sel_badge_bg = "rgba(53, 211, 153, 0.15)"
+                sel_badge_border = "rgba(53, 211, 153, 0.35)"
+                sel_badge_color = "#35D399"
+                sel_color = "#35D399"
+                ai_status_txt = "● Trusted"
+                ai_status_color = "#35D399"
+                ai_bar_color = "#35D399"
+            elif is_fallback:
+                sel_title = "Selected Scheduler (Active)"
+                sel_badge_txt = "Drift Fallback"
+                sel_badge_bg = "rgba(255, 91, 101, 0.15)"
+                sel_badge_border = "rgba(255, 91, 101, 0.35)"
+                sel_badge_color = "#FF5B65"
+                sel_color = "#38BDF8"  # Distinct highlight for empirical fallback
+                ai_status_txt = "▲ Untrusted"
+                ai_status_color = "#FF5B65"
+                ai_bar_color = "#FF5B65"
+            else: # RE-EVALUATE
+                sel_title = "Selected Scheduler (Active)"
+                sel_badge_txt = "Empirical Re-eval"
+                sel_badge_bg = "rgba(251, 191, 36, 0.15)"
+                sel_badge_border = "rgba(251, 191, 36, 0.35)"
+                sel_badge_color = "#FBBF24"
+                sel_color = "#FBBF24"
+                ai_status_txt = "◆ Low Conf (<50%)"
+                ai_status_color = "#FBBF24"
+                ai_bar_color = "#FBBF24"
+            
             with ai_sub1:
                 st.markdown(
                     f"""
                     <div style="background: #151A21; border: 1px solid #272D36; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-                        <div style="font-size: 0.80rem; color: #94A3B8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em;">Recommended Scheduler</div>
-                        <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 3px;">
-                            <div style="font-size: 1.85rem; font-weight: 800; color: #35D399; font-family: 'JetBrains Mono', Consolas, monospace; line-height: 1;">{ai_prediction}</div>
-                            <div style="background: rgba(53, 211, 153, 0.15); border: 1px solid rgba(53, 211, 153, 0.35); color: #35D399; font-size: 0.75rem; font-weight: 700; padding: 3px 7px; border-radius: 4px;">AI Prediction</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-size: 0.78rem; color: #94A3B8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em;">{sel_title}</div>
+                            <div style="background: {sel_badge_bg}; border: 1px solid {sel_badge_border}; color: {sel_badge_color}; font-size: 0.72rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;">{sel_badge_txt}</div>
+                        </div>
+                        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 4px;">
+                            <div style="font-size: 1.85rem; font-weight: 800; color: {sel_color}; font-family: 'JetBrains Mono', Consolas, monospace; line-height: 1;">{selected_scheduler}</div>
+                            <div style="font-size: 0.76rem; color: #94A3B8;">Raw AI: <span style="color: {'#35D399' if is_trust_ai else '#FF5B65'}; font-weight: 700;">{ai_prediction}</span> ({ai_confidence * 100:.1f}%)</div>
                         </div>
                     </div>
                     """,
@@ -729,10 +768,13 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
                     st.markdown(
                         f"""
                         <div style="background: #151A21; border: 1px solid #272D36; border-radius: 8px; padding: 8px 10px; min-height: 64px;">
-                            <div style="font-size: 0.78rem; color: #94A3B8;">Confidence</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-size: 0.78rem; color: #94A3B8;">AI Confidence</div>
+                                <div style="font-size: 0.70rem; color: {ai_status_color}; font-weight: 600;">{ai_status_txt}</div>
+                            </div>
                             <div style="font-size: 1.35rem; font-weight: 700; color: #F1F5F9; font-family: 'JetBrains Mono', Consolas, monospace; margin: 2px 0;">{ai_confidence * 100:.1f}%</div>
                             <div style="background: #272D36; height: 4px; border-radius: 2px; overflow: hidden;">
-                                <div style="background: #35D399; width: {min(max(ai_confidence * 100, 5), 100)}%; height: 100%;"></div>
+                                <div style="background: {ai_bar_color}; width: {min(max(ai_confidence * 100, 5), 100)}%; height: 100%;"></div>
                             </div>
                         </div>
                         """,
@@ -740,7 +782,7 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
                     )
                 with sc2:
                     d_color = "#35D399" if drift_status == "WORKLOAD STABLE" else "#FF5B65"
-                    d_txt = "No Drift" if drift_status == "WORKLOAD STABLE" else "Drift"
+                    d_txt = "No Drift" if drift_status == "WORKLOAD STABLE" else "Drift Detected"
                     st.markdown(
                         f"""
                         <div style="background: #151A21; border: 1px solid #272D36; border-radius: 8px; padding: 8px 10px; min-height: 64px;">
@@ -766,10 +808,12 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
                 )
             
             with ai_sub2:
+                chart_sub = " (AI Active)" if is_trust_ai else (" (Untrusted due to Drift)" if is_fallback else " (Uncertain)")
+                chart_color = "#35D399" if is_trust_ai else ("#FF5B65" if is_fallback else "#FBBF24")
                 st.markdown(
-                    """
+                    f"""
                     <div style="font-size: 0.95rem; font-weight: 700; color: #F1F5F9; margin-bottom: 6px; padding-left: 1px;">
-                        SVM Scheduler Prediction Probabilities
+                        SVM Scheduler Prediction Probabilities<span style="font-size: 0.78rem; font-weight: 600; color: {chart_color}; margin-left: 6px;">{chart_sub}</span>
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -827,6 +871,11 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
                 plt.tight_layout(pad=0.4)
                 st.pyplot(fig, width="stretch")
                 plt.close(fig)
+                
+                if is_fallback:
+                    st.caption(
+                        f"⚠️ **Workload drift active (Score: {drift_score:.3f} ≥ 1.50).** Raw model predicted **{ai_prediction}** ({ai_confidence * 100:.1f}%), but safety policy triggered fallback to empirical evaluation, selecting **{selected_scheduler}**."
+                    )
 
         # --------------------------------------------------------
         # ROW 3: TWO-COLUMN MODEL PERFORMANCE & SENSITIVITY PANELS
