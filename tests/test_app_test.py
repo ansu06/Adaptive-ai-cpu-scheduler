@@ -76,5 +76,49 @@ class TestAppStreamlitState(unittest.TestCase):
         self.assertTrue(len(ai_badges_drift_2) > 0)
         self.assertIn("DRIFT DETECTED", ai_badges_drift_2[0])
 
+    def test_process_slider_driven_workload(self):
+        # 1. Initial render at N=5
+        at = AppTest.from_file("../app.py", default_timeout=30)
+        at.run()
+        self.assertFalse(at.exception, f"App exception: {at.exception}")
+
+        # Check slider exists and starts at default 5
+        slider = [s for s in at.slider if s.key == "proc_slider"][0]
+        self.assertEqual(slider.value, 5)
+
+        # In Balanced profile at N=5: raw recommendation is SJF
+        ai_pred_texts = [m.value for m in at.markdown if "Raw AI:" in m.value]
+        self.assertTrue(len(ai_pred_texts) > 0)
+        self.assertIn("SJF", ai_pred_texts[0])
+
+        # 2. Move slider to N=10 processes
+        slider.set_value(10).run()
+        self.assertFalse(at.exception, f"App exception after moving slider: {at.exception}")
+
+        # In Balanced profile at N=10: raw recommendation dynamically updates to SRTF
+        ai_pred_texts_10 = [m.value for m in at.markdown if "Raw AI:" in m.value]
+        self.assertTrue(len(ai_pred_texts_10) > 0)
+        self.assertIn("SRTF", ai_pred_texts_10[0])
+
+        # Drift status remains stable within threshold
+        ai_badges = [m.value for m in at.markdown if "STABLE WORKLOAD" in m.value or "DRIFT DETECTED" in m.value]
+        self.assertTrue(len(ai_badges) > 0)
+        self.assertIn("STABLE WORKLOAD", ai_badges[0])
+
+        # 3. Switch profile to "Mixed Arrivals (High Load)"
+        profile_sel = [s for s in at.selectbox if s.key == "wl_profile_select"][0]
+        profile_sel.select("Mixed Arrivals (High Load)").run()
+        self.assertFalse(at.exception, f"App exception after selecting high load profile: {at.exception}")
+
+        # Mathematical drift detected authentically from features
+        ai_badges_drift = [m.value for m in at.markdown if "STABLE WORKLOAD" in m.value or "DRIFT DETECTED" in m.value]
+        self.assertTrue(len(ai_badges_drift) > 0)
+        self.assertIn("DRIFT DETECTED", ai_badges_drift[0])
+
+        # Explanatory text informs the user of the drift
+        drift_expl = [m.value for m in at.markdown if "Drift detected because the current workload features differ" in m.value]
+        self.assertTrue(len(drift_expl) > 0)
+
+
 if __name__ == "__main__":
     unittest.main()

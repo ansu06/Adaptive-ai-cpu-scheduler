@@ -508,11 +508,67 @@ with col4:
 # MAIN WORKLOAD GENERATION & SCHEDULER ENGINE
 # ============================================================
 
+def generate_workload_by_profile(n=5, profile="Balanced (Standard)", is_drift_override=False, seed=42):
+    """
+    Generate reproducible, realistic workloads based on process count and scenario.
+    - Balanced (Standard): Real-world mixed jobs from process_data.csv (natural SJF at low n, SRTF at high n).
+    - Short Jobs (Interactive): Interactive desktop/web bursts (15-95ms) with tight arrival intervals (1-6ms).
+    - Mixed Arrivals (High Load): Heavy computational jobs (bursts 480-980ms, staggered arrivals) that naturally
+      diverge from the training baseline (avg burst 203ms), authentically triggering drift (D >= 1.50).
+    - is_drift_override: Developer test override for regression test compatibility.
+    """
+    if is_drift_override:
+        base_procs = load_processes(n=n)
+        drift_processes = []
+        for i, p in enumerate(base_procs):
+            drift_processes.append({
+                "pid": p["pid"],
+                "arrival": 200 + (i * 25),
+                "burst": 800 + (i * 100)
+            })
+        return drift_processes
+
+    if profile in ["Balanced", "Balanced (Standard)"]:
+        return load_processes(n=n)
+
+    rng = np.random.default_rng(seed + n * 31)
+
+    if profile in ["Short Jobs", "Short Jobs (Interactive)"]:
+        arrivals = np.sort(np.cumsum(rng.uniform(1.0, 5.0, n)))
+        arrivals = np.round(arrivals - arrivals[0], 2)
+        bursts = rng.integers(15, 95, n)
+        procs = []
+        for i in range(n):
+            procs.append({
+                "pid": f"P{i+1}",
+                "arrival": float(arrivals[i]),
+                "burst": int(bursts[i])
+            })
+        return procs
+
+    elif profile in ["Mixed Arrivals", "Mixed Arrivals (High Load)"]:
+        arrivals = np.sort(np.cumsum(rng.uniform(5.0, 25.0, n)))
+        arrivals = np.round(arrivals - arrivals[0], 2)
+        bursts = rng.integers(480, 980, n)
+        procs = []
+        for i in range(n):
+            procs.append({
+                "pid": f"P{i+1}",
+                "arrival": float(arrivals[i]),
+                "burst": int(bursts[i])
+            })
+        return procs
+
+    return load_processes(n=n)
+
+
 # Shared Workload Configuration Controls (Used across Dashboard & Workload Views)
 if "workload_mode" not in st.session_state:
     st.session_state["workload_mode"] = "Normal Workload"
 if "num_procs" not in st.session_state:
     st.session_state["num_procs"] = 5
+if "wl_profile" not in st.session_state:
+    st.session_state["wl_profile"] = "Balanced (Standard)"
 
 # Compute Workload & Schedulers
 if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Scheduler Comparison", "Execution Timeline"]:
@@ -521,7 +577,6 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
     # SHARED SIMULATION LOGIC
     # --------------------------------------------------------
     
-    # In Dashboard or Workload Analysis, controls are interactive inside the panel
     # Synchronize widget state immediately to single canonical state (eliminates 1-frame lag on rerun)
     if "wl_radio" in st.session_state:
         st.session_state["workload_mode"] = st.session_state["wl_radio"]
@@ -529,9 +584,59 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
     if "proc_slider" in st.session_state:
         st.session_state["num_procs"] = st.session_state["proc_slider"]
 
+    if "wl_profile_select" in st.session_state:
+        st.session_state["wl_profile"] = st.session_state["wl_profile_select"]
+
     # We define default or current values
     workload_mode = st.session_state["workload_mode"]
     n = st.session_state["num_procs"]
+    wl_profile = st.session_state["wl_profile"]
+    is_drift_override = (workload_mode == "Drift Test")
+
+    # Authoritative workload generation for the current execution cycle
+    processes = generate_workload_by_profile(
+        n=n,
+        profile=wl_profile,
+        is_drift_override=is_drift_override
+    )
+
+    # Convert workload for AI model
+    ai_workload = pd.DataFrame({
+        "Job Id": [
+            int(str(p["pid"]).replace("P", ""))
+            for p in processes
+        ],
+        "Burst time": [
+            p["burst"]
+            for p in processes
+        ],
+        "Arrival Time": [
+            p["arrival"]
+            for p in processes
+        ]
+    })
+
+    # Run Adaptive AI Decision Engine
+    try:
+        adaptive_result = adaptive_schedule(ai_workload)
+        decision_data = adaptive_result["decision"]
+        
+        ai_prediction = decision_data["ai_prediction"]
+        ai_confidence = float(decision_data["ai_confidence"])
+        drift_status = decision_data["drift_status"]
+        drift_score = float(decision_data["drift_score"])
+        decision = decision_data["decision"]
+        reason = decision_data["reason"]
+        selected_scheduler = adaptive_result["selected_scheduler"]
+        selection_method = adaptive_result["method"]
+        confidence = decision_data["confidence"]
+    except Exception as e:
+        st.error(f"AI system error: {e}")
+        st.stop()
+        
+    valid_schedulers = {"FCFS", "SJF", "SRTF", "Round Robin"}
+    if selected_scheduler not in valid_schedulers:
+        selected_scheduler = "SRTF"
     
     # --------------------------------------------------------
     # ROW 1: TWO-COLUMN MAIN LAYOUT (Matching Image 2)
@@ -540,10 +645,11 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
         col_workload, col_ai = st.columns([1, 1], gap="medium")
         
         with col_workload.container(border=True):
-            tag_color = "#35D399" if workload_mode == "Normal Workload" else "#FF5B65"
-            tag_text = "● NORMAL PROFILE" if workload_mode == "Normal Workload" else "▲ DRIFT TEST ACTIVE"
-            tag_border = "rgba(53, 211, 153, 0.35)" if workload_mode == "Normal Workload" else "rgba(255, 91, 101, 0.35)"
-            tag_bg = "rgba(53, 211, 153, 0.12)" if workload_mode == "Normal Workload" else "rgba(255, 91, 101, 0.12)"
+            is_drift_active = (drift_status == "DRIFT DETECTED") or is_drift_override
+            tag_color = "#FF5B65" if is_drift_active else "#35D399"
+            tag_text = "▲ DRIFT TEST ACTIVE" if is_drift_active else "● NORMAL PROFILE"
+            tag_border = "rgba(255, 91, 101, 0.35)" if is_drift_active else "rgba(53, 211, 153, 0.35)"
+            tag_bg = "rgba(255, 91, 101, 0.12)" if is_drift_active else "rgba(53, 211, 153, 0.12)"
             
             st.markdown(
                 f"""
@@ -575,43 +681,79 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
                 unsafe_allow_html=True
             )
             
-            ctrl_c1, ctrl_c2 = st.columns([1, 1], gap="medium")
+            ctrl_c1, ctrl_c2 = st.columns([1.1, 0.9], gap="medium")
             with ctrl_c1:
-                st.markdown('<div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;">Workload Profile</div>', unsafe_allow_html=True)
-                wl_index = 0 if st.session_state.get("workload_mode", "Normal Workload") == "Normal Workload" else 1
-                workload_mode = st.radio(
-                    "Workload Profile",
-                    ["Normal Workload", "Drift Test"],
-                    index=wl_index,
-                    horizontal=True,
-                    label_visibility="collapsed",
-                    key="wl_radio"
-                )
-                st.session_state["workload_mode"] = workload_mode
-            with ctrl_c2:
-                st.markdown(f'<div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;">Processes: <span style="color: #4F8CFF; font-family: monospace;">{st.session_state["num_procs"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;">Processes (Primary Driver): <span style="color: #4F8CFF; font-family: monospace; font-size: 0.95rem;">{st.session_state["num_procs"]}</span></div>', unsafe_allow_html=True)
                 n = st.slider(
                     "Number of processes",
-                    min_value=4,
+                    min_value=2,
                     max_value=20,
                     value=st.session_state["num_procs"],
                     label_visibility="collapsed",
                     key="proc_slider"
                 )
                 st.session_state["num_procs"] = n
-            
-            processes = load_processes(n=n)
-            
-            # Force intentionally abnormal workload for demonstration
-            if workload_mode == "Drift Test":
-                drift_processes = []
-                for i, p in enumerate(processes):
-                    drift_processes.append({
-                        "pid": p["pid"],
-                        "arrival": 200 + (i * 25),
-                        "burst": 800 + (i * 100)
-                    })
-                processes = drift_processes
+
+            with ctrl_c2:
+                st.markdown('<div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;">Workload Profile</div>', unsafe_allow_html=True)
+                profile_options = ["Balanced (Standard)", "Short Jobs (Interactive)", "Mixed Arrivals (High Load)"]
+                curr_prof = st.session_state.get("wl_profile", "Balanced (Standard)")
+                prof_idx = profile_options.index(curr_prof) if curr_prof in profile_options else 0
+                wl_profile = st.selectbox(
+                    "Workload Profile",
+                    profile_options,
+                    index=prof_idx,
+                    label_visibility="collapsed",
+                    key="wl_profile_select"
+                )
+                st.session_state["wl_profile"] = wl_profile
+
+            # Live Drift Status Indicator (Telemetry replacing manual drift test)
+            is_drift = (drift_status == "DRIFT DETECTED")
+            drift_border = "rgba(255, 91, 101, 0.4)" if is_drift else "rgba(53, 211, 153, 0.3)"
+            drift_bg = "rgba(255, 91, 101, 0.08)" if is_drift else "rgba(53, 211, 153, 0.06)"
+            drift_badge_bg = "rgba(255, 91, 101, 0.15)" if is_drift else "rgba(53, 211, 153, 0.15)"
+            drift_badge_border = "rgba(255, 91, 101, 0.4)" if is_drift else "rgba(53, 211, 153, 0.4)"
+            drift_badge_color = "#FF5B65" if is_drift else "#35D399"
+            drift_badge_txt = "DRIFT DETECTED (FALLBACK ACTIVE)" if is_drift else "WORKLOAD STABLE (TRUST AI)"
+            bar_color = "#FF5B65" if is_drift else "#35D399"
+            bar_pct = min(max(int((drift_score / 2.0) * 100), 5), 100)
+
+            if is_drift:
+                explanation_txt = f"⚠️ Drift detected because the current workload features differ from the training baseline (Score: {drift_score:.3f} &ge; 1.50). Safety policy triggered fallback to empirical evaluation."
+            else:
+                explanation_txt = f"Workload distribution conforms to training baseline (Score: {drift_score:.3f} &lt; 1.50). Raw ML scheduler recommendation is safely trusted."
+
+            st.markdown(
+                f"""
+                <div style="background: {drift_bg}; border: 1px solid {drift_border}; border-radius: 8px; padding: 10px 12px; margin: 10px 0 12px 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <div style="font-size: 0.76rem; color: #94A3B8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em;">
+                            Live Workload Drift Status
+                        </div>
+                        <div style="background: {drift_badge_bg}; border: 1px solid {drift_badge_border}; color: {drift_badge_color}; font-size: 0.70rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;">
+                            {drift_badge_txt}
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                        <div style="font-size: 0.82rem; color: #CBD5E1;">
+                            Statistical Drift: <strong style="font-family: 'JetBrains Mono', Consolas, monospace; color: {drift_badge_color}; font-size: 1.05rem;">{drift_score:.3f}</strong>
+                            <span style="color: #64748B; font-size: 0.78rem;"> / 1.500 Threshold</span>
+                        </div>
+                        <div style="font-size: 0.72rem; color: #94A3B8;">
+                            Feature Dist: Standardized Mean Distance
+                        </div>
+                    </div>
+                    <div style="background: #1B2129; height: 5px; border-radius: 3px; overflow: hidden; margin-bottom: 6px;">
+                        <div style="background: {bar_color}; width: {bar_pct}%; height: 100%; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="font-size: 0.78rem; color: {'#FCA5A5' if is_drift else '#94A3B8'}; line-height: 1.35;">
+                        {explanation_txt}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
             # Render process table exactly once
             process_df = pd.DataFrame(processes).rename(
@@ -629,44 +771,19 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
                 hide_index=True,
                 height=wl_table_height
             )
-        
-        # Convert workload for AI model
-        ai_workload = pd.DataFrame({
-            "Job Id": [
-                int(str(p["pid"]).replace("P", ""))
-                for p in processes
-            ],
-            "Burst time": [
-                p["burst"]
-                for p in processes
-            ],
-            "Arrival Time": [
-                p["arrival"]
-                for p in processes
-            ]
-        })
-        
-        # Run Adaptive AI Decision Engine
-        try:
-            adaptive_result = adaptive_schedule(ai_workload)
-            decision_data = adaptive_result["decision"]
-            
-            ai_prediction = decision_data["ai_prediction"]
-            ai_confidence = float(decision_data["ai_confidence"])
-            drift_status = decision_data["drift_status"]
-            drift_score = float(decision_data["drift_score"])
-            decision = decision_data["decision"]
-            reason = decision_data["reason"]
-            selected_scheduler = adaptive_result["selected_scheduler"]
-            selection_method = adaptive_result["method"]
-            confidence = decision_data["confidence"]
-        except Exception as e:
-            st.error(f"AI system error: {e}")
-            st.stop()
-            
-        valid_schedulers = {"FCFS", "SJF", "SRTF", "Round Robin"}
-        if selected_scheduler not in valid_schedulers:
-            selected_scheduler = "SRTF"
+
+            # Optional developer/testing section for manual injection & regression test suite
+            with st.expander("🛠️ Advanced / Developer Testing Controls", expanded=False):
+                st.caption("Developer simulation toggle for regression testing and manual injection.")
+                wl_index = 0 if st.session_state.get("workload_mode", "Normal Workload") == "Normal Workload" else 1
+                workload_mode = st.radio(
+                    "Workload Profile",
+                    ["Normal Workload", "Drift Test"],
+                    index=wl_index,
+                    horizontal=True,
+                    key="wl_radio"
+                )
+                st.session_state["workload_mode"] = workload_mode
             
         # Render AI Decision & Explainability Panel (Right Column)
         with col_ai.container(border=True):
@@ -1025,33 +1142,8 @@ if selected_nav in ["Dashboard", "Workload Analysis", "Model Performance", "Sche
             )
                 
     else:
-        # Load processes for other views
-        processes = load_processes(n=n)
-        if workload_mode == "Drift Test":
-            drift_processes = []
-            for i, p in enumerate(processes):
-                drift_processes.append({
-                    "pid": p["pid"],
-                    "arrival": 200 + (i * 25),
-                    "burst": 800 + (i * 100)
-                })
-            processes = drift_processes
-        ai_workload = pd.DataFrame({
-            "Job Id": [int(str(p["pid"]).replace("P", "")) for p in processes],
-            "Burst time": [p["burst"] for p in processes],
-            "Arrival Time": [p["arrival"] for p in processes]
-        })
-        adaptive_result = adaptive_schedule(ai_workload)
-        decision_data = adaptive_result["decision"]
-        ai_prediction = decision_data["ai_prediction"]
-        ai_confidence = float(decision_data["ai_confidence"])
-        drift_status = decision_data["drift_status"]
-        drift_score = float(decision_data["drift_score"])
-        decision = decision_data["decision"]
-        reason = decision_data["reason"]
-        selected_scheduler = adaptive_result["selected_scheduler"]
-        selection_method = adaptive_result["method"]
-        confidence = decision_data["confidence"]
+        # Other views inherit the authoritative workload and AI decision
+        pass
         
     # --------------------------------------------------------
     # RUN TRADITIONAL SCHEDULERS
